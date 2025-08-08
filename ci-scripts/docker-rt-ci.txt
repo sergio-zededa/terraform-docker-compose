@@ -1,0 +1,52 @@
+#cloud-config
+
+hostname: my_docker_rt_instance1
+manage_etc_hosts: true
+
+groups:
+- zrun
+
+#cloud-config
+users:
+  - name: pocuser
+    gecos: ZEDEDA Docker Compose User
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    passwd: pocuser  # should be a hashed password, or use chpasswd
+    groups:
+      - zrun
+      - users
+      - admin
+      - docker
+
+chpasswd:
+  list: |
+    pocuser:pocuser
+  expire: false
+
+
+runcmd:
+# create and map the UserData partition
+- echo 'root:pocuser' | chpasswd -c SHA512 -s 1000000
+- /home/zededa/bin/disk-partition.sh
+
+- nmcli con modify "Wired connection 1" ipv4.dns "192.168.1.2" ipv4.ignore-auto-dns yes && nmcli con up "Wired connection 1"
+
+- /home/zededa/bin/setup_dcompose.sh "pocuser"
+
+- echo "[Service]" > /etc/systemd/system/zrun-agent.service.d/zrun-env.conf
+- echo 'Environment=COLLECTSTATSIPADDR="10.20.0.201"' >> /etc/systemd/system/zrun-agent.service.d/zrun-env.conf
+
+- cd /home/zededa && chown -R "pocuser" . && chgrp -R users .
+- sed -i -e 's/\(^Defaults secure_path.*\)"$/\1:\/usr\/local\/bin\/"/' /etc/sudoers
+
+- /home/zededa/bin/last_things.sh
+- systemctl enable zrun-agent
+- systemctl daemon-reload
+- systemctl start zrun-agent
+# removes bothersome logs
+#- echo "ListenAddress ""$(ip -4 -o a l eth2 | awk -F'/| +' '{print $4}')" >> /etc/ssh/sshd_config
+#- systemctl restart sshd
+
+final_message: "Docker Compose has been setup, after $UPTIME seconds"
